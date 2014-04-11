@@ -17,6 +17,7 @@ orgs = json.loads(open('orgs.json').read())
 
 r = redis.StrictRedis()
 
+
 # collect comments and bucket by time, organization, and org type
 
 comments = {"A": {}, "L": {}, "M": {}}
@@ -24,7 +25,7 @@ for comment_id in r.smembers("comments"):
     image_id = r.hget(comment_id, "image")
     org_id = r.hget(image_id, "owner")
     if org_id not in orgs:
-        logging.warn("%s: don't know about org %s", image_id, org_id)
+        logging.warn("%s: don't know about org %s", comment_id, org_id)
         continue
 
     t = time.strftime('%Y-%m', time.localtime(int(r.hget(comment_id, 'created'))))
@@ -59,14 +60,19 @@ for image_id in r.smembers("images"):
     org_type = orgs[org_id]['type']
     images[org_type][t] = images[org_type].get(t, 0) + 1
 
-open("stats.json", "w").write(json.dumps({"comments": comments, "images": images}, indent=2))
+# that took a while, so save it
+open("engagement.json", "w").write(json.dumps({"comments": comments, "images": images}, indent=2))
 
-cols = ["M", "L", "A"].extend(orgs.keys())
-print "date\tcomments\tuploads"
-for year in range(2006, 2014):
-    for month in range(1, 13):
-        t = "%i-%02i" % (year, month)
-        print t, "\t",
-        for col in cols:
-            print comments[col].get(t, 0), images[col].get(t, 0),
-        print
+def write_stats(filename, stats):
+    fh = open(filename, "w")
+    for year in range(2006, 2014):
+        for month in range(1, 13):
+            t = "%i-%02i" % (year, month)
+            row = [t]
+            for org_type in ["A", "L", "M"]:
+                row.append(str(stats[org_type].get(t, 0)))
+            fh.write("\t".join(row) + "\n")
+    fh.close()
+
+write_stats("comments.tsv", comments)
+write_stats("images.tsv", images)
