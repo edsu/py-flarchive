@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
 """
-Loads up a redis instance with notes, tags, comments authors for a given 
-organization.  Use the following key patterns to look stuff up.
+Loads up a redis instance with owners, notes, tags, comments and authors. The
+following keys will be created:
+
+* owners - set of all owners
+* owner:1234:images - images for owner 1234
 
 * images - set of all images
 * image:1234 - info for image 1234
@@ -32,23 +35,33 @@ import redis
 
 r = redis.StrictRedis()
 
-d = "/mnt/flickr-commons/flickr-commons-metadata-1.0/data/"
+d = "/mnt/flickr-commons-metadata-1.0/data/"
 
-def main(org_id): 
+def main(): 
 
-    for dirpath, dirnames, filenames in os.walk(d + org_id):
-        for filename in filenames:
-            path = os.path.join(dirpath, filename)
-            if filename.endswith("i.json"):
-                load_info(path)
-            elif filename.endswith("c.json"):
-                load_comments(path)
-            elif filename.endswith("ctx.json"):
-                load_sets(path)
+    for org_dir in os.listdir(d):
+        # skip british library for now, too big
+        if org_dir == '12403504@N02':
+            continue
+
+        for dirpath, dirnames, filenames in os.walk(d + org_dir):
+            for filename in filenames:
+                path = os.path.join(dirpath, filename)
+                if filename.endswith("i.json"):
+                    load_info(path)
+                elif filename.endswith("c.json"):
+                    load_comments(path)
+                elif filename.endswith("ctx.json"):
+                    load_sets(path)
 
 
 def load_info(path):
-    image = json.loads(open(path).read())
+    try:
+        image = json.loads(open(path).read())
+    except Exception as e:
+        print "%s - %s" % (path, e)
+        return
+    print path
 
     # general image info
     image_id = "image:%s" % image['photo']['id']
@@ -56,6 +69,12 @@ def load_info(path):
     r.hset(image_id, 'title', image['photo']['title'])
     r.hset(image_id, 'created', image['photo']['dateuploaded'])
     r.sadd('images', image_id)
+
+    # track the owner of the image
+    owner_id = 'owner:%s' % image['photo']['owner']['nsid']
+    r.hset(image_id, 'owner', owner_id)
+    r.sadd('owners', owner_id)
+    r.sadd('%s:images' % owner_id, image_id)
    
     # tags
     for tag in image['photo']['tags']['tag']:
@@ -86,7 +105,12 @@ def load_info(path):
 
 
 def load_comments(path):
-    comments = json.loads(open(path).read())
+    try:
+        comments = json.loads(open(path).read())
+    except Exception as e:
+        print "%s - %s" % (path, e)
+        return
+
     if 'comments' not in comments or 'comment' not in comments['comments']:
         return
     for comment in comments['comments']['comment']:
@@ -103,7 +127,12 @@ def load_comments(path):
 
 
 def load_sets(path):
-    sets = json.loads(open(path).read())
+    try:
+        sets = json.loads(open(path).read())
+    except Exception as e:
+        print "%s - %s" % (path, e)
+        return
+
     if 'set' not in sets:
         return
     image_id = 'image:%s' % os.path.basename(path).replace('-ctx.json', '')
@@ -117,6 +146,6 @@ def load_sets(path):
 
 if __name__ == "__main__":
     # TODO: right now it's hard-coded to Brooklyn Musuem 
-    main('83979593@N00')
+    main()
 
 
